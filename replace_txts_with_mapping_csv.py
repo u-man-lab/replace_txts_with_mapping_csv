@@ -145,9 +145,13 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
         mapping_dict: OrderedDict[str, str] = OrderedDict()
         duplicated_first_column_values: list[str] = []
         for find_str, replace_str in df[list(two_columns)].values:
-            if find_str in mapping_dict and find_str in duplicated_first_column_values:
+
+            if find_str not in mapping_dict:
+                mapping_dict[find_str] = replace_str
+                continue
+
+            if find_str not in duplicated_first_column_values:
                 duplicated_first_column_values.append(find_str)
-            mapping_dict[find_str] = replace_str
 
         return mapping_dict, duplicated_first_column_values
 
