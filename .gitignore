@@ -1,0 +1,14 @@
+/__pycache__
+
+/configs/*
+!/configs/replace_txts_with_mapping_csv.yaml
+
+/data/*
+!/data/replace_mapping.csv
+!/data/original_txts
+
+/data/original_txts/*
+!/data/original_txts/original.txt
+
+/results/*
+!/results/replaced.txt

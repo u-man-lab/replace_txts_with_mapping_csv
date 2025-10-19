@@ -1,0 +1,23 @@
+## configuration file for "replace_txts_with_mapping_csv.py" ##
+# NOTE: All fields are required.
+
+INPUT:
+
+  # An input TXT file.
+  ORIGINAL_TXT:
+    PATH: './data/original_txts/original.txt'
+    ENCODING: 'utf-8'
+
+  # An input CSV file with columns of find & replace strings.
+  REPLACE_MAPPING_CSV:
+    PATH: './data/replace_mapping.csv'
+    ENCODING: 'utf-8'
+    FIND_STRING_COLUMN: 'find'
+    REPLACE_STRING_COLUMN: 'replace'
+
+OUTPUT:
+
+  # An output TXT file which must not exist, and the parent folder must exist.
+  REPLACED_TXT:
+    PATH: './results/replaced.txt'
+    ENCODING: 'utf-8'
