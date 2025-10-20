@@ -8,7 +8,11 @@
 !/data/original_txts
 
 /data/original_txts/*
-!/data/original_txts/original.txt
+!/data/original_txts/01.txt
+!/data/original_txts/02.txt
+!/data/original_txts/03.txt
 
 /results/*
-!/results/replaced.txt
+!/results/01.txt
+!/results/02.txt
+!/results/03.txt

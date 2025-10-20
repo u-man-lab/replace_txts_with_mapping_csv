@@ -3,9 +3,9 @@
 
 INPUT:
 
-  # An input TXT file.
-  ORIGINAL_TXT:
-    PATH: './data/original_txts/original.txt'
+  # An input TXT files.
+  ORIGINAL_TXTS:
+    FOLDER_PATH: './data/original_txts'
     ENCODING: 'utf-8'
 
   # An input CSV file with columns of find & replace strings.
@@ -17,7 +17,5 @@ INPUT:
 
 OUTPUT:
 
-  # An output TXT file which must not exist, and the parent folder must exist.
-  REPLACED_TXT:
-    PATH: './results/replaced.txt'
-    ENCODING: 'utf-8'
+  # An existing blank folder path to output replaced TXT files.
+  FOLDER_PATH: './results'

@@ -12,8 +12,8 @@ import yaml
 from pydantic import (
     BaseModel,
     ConfigDict,
+    DirectoryPath,
     FilePath,
-    NewPath,
     PrivateAttr,
     StrictStr,
     field_validator,
@@ -45,19 +45,22 @@ class EncodingStr:
         return arg
 
 
-class PathEncodingConverterMixin:
-    """Pydantic mixin for automatic validation and conversion of PATH and ENCODING fields.
+class TxtsInFolderConfig(BaseModel):
+    """Configuration for txt files which encoding is the same in a folder.
 
-    Provides field validators for converting string paths to 'Path' and encoding strings
-    to 'EncodingStr' during model initialization.
+    Attributes:
+        FOLDER_PATH: Paths of a folder in which the txts are put.
+        ENCODING: Encoding of the txts.
     """
 
-    @field_validator('PATH', mode='before')
-    @classmethod
-    def __convert_str_to_file_path_and_validate(cls, arg: Any) -> Path:
-        if not isinstance(arg, str):
-            raise TypeError(f'The argument must be a string, got "{arg}" [{type(arg)}].')
-        return Path(arg.strip())
+    FOLDER_PATH: DirectoryPath  # Must be existing directory
+    ENCODING: EncodingStr
+
+    __txt_paths: tuple[Path, ...] = PrivateAttr()
+
+    model_config = ConfigDict(
+        frozen=True, extra='forbid', strict=True, arbitrary_types_allowed=True
+    )
 
     @field_validator('ENCODING', mode='before')
     @classmethod
@@ -66,28 +69,42 @@ class PathEncodingConverterMixin:
             raise TypeError(f'The argument must be a string, got "{arg}" [{type(arg)}].')
         return EncodingStr(arg.strip())
 
+    @field_validator('FOLDER_PATH', mode='before')
+    @classmethod
+    def __convert_str_to_path_and_validate(cls, arg: Any) -> Path:
+        if not isinstance(arg, str):
+            raise TypeError(f'The argument must be a string, got "{arg}" [{type(arg)}].')
+        return Path(arg.strip())
 
-class ExistingTxtConfig(PathEncodingConverterMixin, BaseModel):
-    """Configuration for an existing TXT file.
+    @staticmethod
+    def __get_child_file_paths(path: Path) -> tuple[Path, ...]:
+        """Get paths of files in the folder. Assume that only files are in the folder.
 
-    Attributes:
-        PATH: Path to an existing TXT file.
-        ENCODING: Encoding to use when reading the TXT.
-    """
+        Raises:
+            ValueError: If the folder is blank or if any non-file object is in the folder.
+        """
 
-    PATH: FilePath  # Must be an existing file.
-    ENCODING: EncodingStr
+        txt_paths = tuple(path.iterdir())
 
-    model_config = ConfigDict(
-        frozen=True, extra='forbid', strict=True, arbitrary_types_allowed=True
-    )
+        if not txt_paths:
+            raise ValueError(f'No txts in the folder.: "{path}"')
 
-    def read_text(self) -> str:
-        """Writes the given string to a TXT file."""
-        return self.PATH.read_text(encoding=str(self.ENCODING))
+        for txt_path in txt_paths:
+            if not txt_path.is_file():
+                raise ValueError(f'Non-file object in the folder.: "{path}"')
+
+        return txt_paths
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        self.__txt_paths = self.__get_child_file_paths(self.FOLDER_PATH)
+
+    @property
+    def txt_paths(self) -> tuple[Path, ...]:
+        return self.__txt_paths
 
 
-class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
+class ReplaceMappingCsv(BaseModel):
     """Represents a CSV file with columns of find & replace strings.
 
     Attributes:
@@ -108,6 +125,20 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
 
     __mapping_dict: OrderedDict[str, str] = PrivateAttr()
 
+    @field_validator('PATH', mode='before')
+    @classmethod
+    def __convert_str_to_file_path_and_validate(cls, arg: Any) -> Path:
+        if not isinstance(arg, str):
+            raise TypeError(f'The argument must be a string, got "{arg}" [{type(arg)}].')
+        return Path(arg.strip())
+
+    @field_validator('ENCODING', mode='before')
+    @classmethod
+    def __convert_str_to_encoding_str_and_validate(cls, arg: Any) -> EncodingStr:
+        if not isinstance(arg, str):
+            raise TypeError(f'The argument must be a string, got "{arg}" [{type(arg)}].')
+        return EncodingStr(arg.strip())
+
     def __read_csv(
         self, allow_empty: bool = True, use_columns: tuple[str, ...] = tuple()
     ) -> pd.DataFrame:
@@ -127,7 +158,9 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
             )
 
         with open(self.PATH, 'r', encoding=str(self.ENCODING), newline='') as fr:
+
             reader = csv.reader(fr)
+
             try:
                 headers = next(reader)
             except StopIteration as err:
@@ -164,6 +197,16 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
     def __create_mapping_dict_from_df(
         df: pd.DataFrame, two_columns: tuple[str, str]
     ) -> tuple[OrderedDict[str, str], list[str]]:
+        """Create mapping dict from two columns in a DataFrame.
+
+        Args:
+            df: Source DataFrame.
+            two_columns: Two column names in the df. The former is key, and the latter is value.
+
+        Returns:
+            OrderedDict[str, str]: Mapping dict which is ordered by the order in CSV.
+            list[str]: Duplicated keys in the CSV.
+        """
 
         mapping_dict: OrderedDict[str, str] = OrderedDict()
         duplicated_first_column_values: list[str] = []
@@ -179,6 +222,11 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
         return mapping_dict, duplicated_first_column_values
 
     def __read_csv_into_mapping_dict(self):
+        """Read CSV & set the content to variable "__mapping_dict".
+
+        Raises:
+            ValueError: Values in the "find" column are duplicated or blank.
+        """
 
         find_and_replace_columns = (
             self.FIND_STRING_COLUMN,
@@ -200,6 +248,7 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
         self.__read_csv_into_mapping_dict()
 
     def replace_text(self, data: str) -> str:
+        """Replace a text with the mapping dict."""
 
         replaced_text = data
         for find_str, replace_str in self.__mapping_dict.items():
@@ -212,35 +261,15 @@ class InputConfig(BaseModel):
     'INPUT' in YAML.
 
     Attributes:
-        ORIGINAL_TXT: Configuration for the input TXT file.
+        ORIGINAL_TXTS: Configuration for the input TXT files.
         REPLACE_MAPPING_CSV:
             Configuration for the input CSV file with columns of find & replace strings.
     """
 
-    ORIGINAL_TXT: ExistingTxtConfig
+    ORIGINAL_TXTS: TxtsInFolderConfig
     REPLACE_MAPPING_CSV: ReplaceMappingCsv
 
     model_config = ConfigDict(frozen=True, extra='forbid', strict=True)
-
-
-class NewTxtConfig(PathEncodingConverterMixin, BaseModel):
-    """Configuration for a new TXT file.
-
-    Attributes:
-        PATH: Path to a new output TXT file.
-        ENCODING: Encoding to use when writing the TXT.
-    """
-
-    PATH: NewPath  # Must not exist & parent must exist
-    ENCODING: EncodingStr
-
-    model_config = ConfigDict(
-        frozen=True, extra='forbid', strict=True, arbitrary_types_allowed=True
-    )
-
-    def write_text(self, data: str):
-        """Writes the given string to a TXT file."""
-        self.PATH.write_text(data, encoding=str(self.ENCODING))
 
 
 class OutputConfig(BaseModel):
@@ -248,12 +277,28 @@ class OutputConfig(BaseModel):
     'OUTPUT' in YAML.
 
     Attributes:
-        REPLACED_TXT: Configuration for the output TXT file.
+        FOLDER_PATH: An existing blank folder path to output replaced TXT files.
     """
 
-    REPLACED_TXT: NewTxtConfig
+    FOLDER_PATH: DirectoryPath  # Must be existing directory
 
     model_config = ConfigDict(frozen=True, extra='forbid', strict=True)
+
+    @field_validator('FOLDER_PATH', mode='before')
+    @classmethod
+    def __convert_str_to_path(cls, arg: Any) -> Path:
+        if not isinstance(arg, str):
+            raise TypeError(f'The argument must be a string, got "{arg}" [{type(arg)}].')
+        return Path(arg.strip())
+
+    @field_validator('FOLDER_PATH', mode='after')
+    @classmethod
+    def __validate_folder_path(cls, path: DirectoryPath) -> Path:
+        """Validate that the folder is a  blank folder."""
+
+        if list(path.iterdir()):
+            raise ValueError(f'Output folder must be a blank folder.: "{path}"')
+        return path
 
 
 class Config(BaseModel):
@@ -320,29 +365,60 @@ def __replace_txts_with_mapping_csv():
 
     CONFIG: Final[Config] = __read_arg_config_path()
 
-    original_txt_config = CONFIG.INPUT.ORIGINAL_TXT
-    logger.info(f'Reading the TXT "{original_txt_config.PATH}"...')
-    try:
-        original_string = original_txt_config.read_text()
-    except Exception:
-        logger.exception(f'Failed to read the TXT "{original_txt_config.PATH}".')
-        sys.exit(1)
-
+    original_txts_config = CONFIG.INPUT.ORIGINAL_TXTS
     mapping_csv = CONFIG.INPUT.REPLACE_MAPPING_CSV
-    logger.info(f'Replacing with CSV "{mapping_csv.PATH}"...')
-    try:
-        replaced_text = mapping_csv.replace_text(original_string)
-    except Exception:
-        logger.exception(f'Failed to replace with CSV "{mapping_csv.PATH}".')
-        sys.exit(1)
+    encoding = str(original_txts_config.ENCODING)
 
-    replaced_txt_config = CONFIG.OUTPUT.REPLACED_TXT
-    logger.info(f'Writing a new TXT "{replaced_txt_config.PATH}"...')
-    try:
-        replaced_txt_config.write_text(replaced_text)
-    except Exception:
-        logger.exception(f'Failed to write a new TXT "{replaced_txt_config.PATH}".')
-        sys.exit(1)
+    logger.info(f'Total TXTs count: {len(original_txts_config.txt_paths)}.')
+
+    exceptions = []
+    for original_txt_path in original_txts_config.txt_paths:
+
+        logger.info('---')
+
+        logger.info(f'Reading TXT "{original_txt_path}"...')
+        try:
+            # Prevents line break codes from being unified to "\n" with "newline=''".
+            with open(original_txt_path, 'r', encoding=encoding, newline='') as fr:
+                original_text = fr.read()
+        except Exception as err:
+            message = f'Failed to read TXT "{original_txt_path}".'
+            err.add_note(message)
+            exceptions.append(err)
+            logger.error(message)
+            continue
+
+        logger.info(f'Replacing with CSV "{mapping_csv.PATH}"...')
+        try:
+            replaced_text = mapping_csv.replace_text(original_text)
+        except Exception as err:
+            message = f'Failed to replace with CSV "{mapping_csv.PATH}".'
+            err.add_note(message)
+            exceptions.append(err)
+            logger.error(message)
+            continue
+
+        replaced_txt_path = CONFIG.OUTPUT.FOLDER_PATH / original_txt_path.name
+        logger.info(f'Writing new TXT "{replaced_txt_path}"...')
+        try:
+            # Prevents line break codes from being unified to OS-default with "newline=''".
+            with open(replaced_txt_path, 'w', encoding=encoding, newline='') as fw:
+                fw.write(replaced_text)
+        except Exception as err:
+            message = f'Failed to write new TXT "{replaced_txt_path}".'
+            err.add_note(message)
+            exceptions.append(err)
+            logger.error(message)
+            continue
+
+    logger.info('---')
+
+    if exceptions:
+        try:
+            raise ExceptionGroup('Some files are failed to be processed.', exceptions)
+        except ExceptionGroup:
+            logger.exception('Script aborted because some files are failed to be processed.')
+            sys.exit(1)
 
     logger.info(f'"{os.path.basename(__file__)}" done!')
 
