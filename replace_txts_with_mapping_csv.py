@@ -127,15 +127,27 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
             )
 
         with open(self.PATH, 'r', encoding=str(self.ENCODING), newline='') as fr:
+            reader = csv.reader(fr)
             try:
-                headers = next(csv.reader(fr))
+                headers = next(reader)
             except StopIteration as err:
                 raise ValueError(f'No columns to parse from file.: "{self.PATH}"') from err
+
+            headers_len = len(headers)
+            broken_line_ids = [
+                str(line_id)
+                for line_id, row in enumerate(reader, start=2)
+                if len(row) not in (0, headers_len)
+            ]
 
         if missing_columns := '", "'.join(col for col in use_columns if col not in headers):
             raise ValueError(f'Necessary columns are missing in the CSV.: "{missing_columns}"')
         if duplicated_columns := '", "'.join(col for col in use_columns if headers.count(col) > 1):
             raise ValueError(f'Columns are duplicated in the CSV.: "{duplicated_columns}"')
+        if broken_line_ids_str := ', line '.join(broken_line_ids):
+            raise ValueError(
+                f'{headers_len} columns are expected in the CSV, but not at: line {broken_line_ids_str}'
+            )
 
         df = pd.read_csv(self.PATH, encoding=str(self.ENCODING), dtype=str, keep_default_na=False)
 
