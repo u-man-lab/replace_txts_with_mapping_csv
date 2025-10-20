@@ -140,16 +140,20 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
                 if len(row) not in (0, headers_len)
             ]
 
-        if missing_columns := '", "'.join(col for col in use_columns if col not in headers):
-            raise ValueError(f'Necessary columns are missing in the CSV.: "{missing_columns}"')
-        if duplicated_columns := '", "'.join(col for col in use_columns if headers.count(col) > 1):
-            raise ValueError(f'Columns are duplicated in the CSV.: "{duplicated_columns}"')
+        if missing_columns := [col for col in use_columns if col not in headers]:
+            missing_columns_str = '", "'.join(missing_columns)
+            raise ValueError(f'Necessary columns are missing in the CSV.: "{missing_columns_str}"')
+        if duplicated_columns := [col for col in use_columns if headers.count(col) > 1]:
+            duplicated_columns_str = '", "'.join(duplicated_columns)
+            raise ValueError(f'Columns are duplicated in the CSV.: "{duplicated_columns_str}"')
         if broken_line_ids_str := ', line '.join(broken_line_ids):
             raise ValueError(
                 f'{headers_len} columns are expected in the CSV, but not at: line {broken_line_ids_str}'
             )
 
         df = pd.read_csv(self.PATH, encoding=str(self.ENCODING), dtype=str, keep_default_na=False)
+        # Overwrite automatically converted strings (e.g., '' -> 'Unnamed: 1', ['a', 'a'] -> ['a', 'a.1'])
+        df.columns = pd.Index(headers)
 
         if not allow_empty and df.shape[0] == 0:
             raise ValueError('Empty rows in the CSV.')
