@@ -1,4 +1,5 @@
 import codecs
+import csv
 import os
 import sys
 from collections import OrderedDict
@@ -108,13 +109,13 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
     __mapping_dict: OrderedDict[str, str] = PrivateAttr()
 
     def __read_csv(
-        self, allow_empty: bool = True, necessary_columns: tuple[str, ...] = tuple()
+        self, allow_empty: bool = True, use_columns: tuple[str, ...] = tuple()
     ) -> pd.DataFrame:
         """Reads the configured CSV file into a pandas DataFrame.
 
         Args:
             allow_empty: Whether to allow empty rows below header row.
-            necessary_columns: Columns necessary in the CSV.
+            use_columns: Columns to use in the CSV.
 
         Returns:
             pd.DataFrame: DataFrame containing the contents of the CSV file.
@@ -125,12 +126,18 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
                 f'The argument must be a bool, got "{allow_empty}" [{type(allow_empty)}].'
             )
 
-        df = pd.read_csv(self.PATH, encoding=str(self.ENCODING), dtype=str, keep_default_na=False)
+        with open(self.PATH, 'r', encoding=str(self.ENCODING), newline='') as fr:
+            try:
+                headers = next(csv.reader(fr))
+            except StopIteration as err:
+                raise ValueError(f'No columns to parse from file.: "{self.PATH}"') from err
 
-        missing_columns = tuple(col for col in necessary_columns if col not in df.columns)
-        if missing_columns:
-            missing_columns_str = '", "'.join(missing_columns)
-            raise ValueError(f'Necessary columns are missing in the CSV.: "{missing_columns_str}"')
+        if missing_columns := '", "'.join(col for col in use_columns if col not in headers):
+            raise ValueError(f'Necessary columns are missing in the CSV.: "{missing_columns}"')
+        if duplicated_columns := '", "'.join(col for col in use_columns if headers.count(col) > 1):
+            raise ValueError(f'Columns are duplicated in the CSV.: "{duplicated_columns}"')
+
+        df = pd.read_csv(self.PATH, encoding=str(self.ENCODING), dtype=str, keep_default_na=False)
 
         if not allow_empty and df.shape[0] == 0:
             raise ValueError('Empty rows in the CSV.')
@@ -162,7 +169,7 @@ class ReplaceMappingCsv(PathEncodingConverterMixin, BaseModel):
             self.REPLACE_STRING_COLUMN,
         )
 
-        df = self.__read_csv(allow_empty=False, necessary_columns=find_and_replace_columns)
+        df = self.__read_csv(allow_empty=False, use_columns=find_and_replace_columns)
         self.__mapping_dict, duplicated_find_strings = self.__create_mapping_dict_from_df(
             df, find_and_replace_columns
         )
