@@ -1,8 +1,8 @@
 No.,find,replace,comment
-1,abcde,X,"de" is conflicting with No.2.
+1,abcde,X,'de' is conflicting with No.2.
 2,defg,Y,
 3,lmno,,Delete string.
-4,foo,bar,"bar" will be replaced again by No.4.
+4,foo,bar,'bar' will be replaced again by No.4.
 5,bar,baz,
 6,pen.\nThis,pencil.\nThat,NG: Escape characters (such as line break codes) will not work.
 7,pen.\r\nThis,mechanical pencil.\r\nHe,NG: Same reason.
